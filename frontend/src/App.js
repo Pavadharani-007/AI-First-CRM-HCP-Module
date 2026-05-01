@@ -18,7 +18,7 @@ function App() {
   const [insight, setInsight] = useState("");
   const [history, setHistory] = useState([]);
 
-  // ---------------- SEND ----------------
+  // ---------------- SEND MESSAGE ----------------
   const sendMessage = async () => {
     if (!message.trim()) return;
 
@@ -31,13 +31,21 @@ function App() {
 
       console.log("FULL RESPONSE:", res.data);
 
-      setForm(res.data.form_data);
-      setSummary(res.data.summary);
-      setInsight(res.data.insight);
+      // 🔥 SAFE MERGE (prevents overwriting issues)
+      setForm((prev) => ({
+        ...prev,
+        ...res.data.form_data,
+      }));
 
-      setHistory([
-        ...history,
-        { text: message, response: res.data.form_data }
+      setSummary(res.data.summary || "");
+      setInsight(res.data.insight || "");
+
+      setHistory((prev) => [
+        ...prev,
+        {
+          text: message,
+          response: res.data.form_data || {},
+        },
       ]);
 
       setMessage("");
@@ -49,11 +57,18 @@ function App() {
     setLoading(false);
   };
 
-  // ---------------- UPDATE (NEW) ----------------
+  // ---------------- UPDATE INTERACTION ----------------
   const updateInteraction = async () => {
     try {
       const res = await axios.post("http://127.0.0.1:8000/edit", form);
-      setForm(res.data);
+
+      console.log("EDIT RESPONSE:", res.data);
+
+      // 🔥 SAFE MERGE instead of full replace
+      setForm((prev) => ({
+        ...prev,
+        ...res.data,
+      }));
     } catch (err) {
       console.log(err);
       alert("Update failed");
@@ -69,7 +84,6 @@ function App() {
 
         <div className="card">
 
-          {/* EDITABLE FIELDS */}
           <input
             value={form.hcp_name}
             placeholder="HCP Name"
@@ -117,11 +131,9 @@ function App() {
             Brochure Given
           </label>
 
-          {/* UPDATE BUTTON */}
           <button className="btn" onClick={updateInteraction}>
             Update Interaction
           </button>
-
         </div>
 
         {/* SUMMARY */}
@@ -148,7 +160,8 @@ function App() {
               <b>You:</b> {item.text}
               <br />
               <small>
-                → {item.response.hcp_name || "No Name"} | {item.response.sentiment}
+                → {item.response?.hcp_name || "No Name"} |{" "}
+                {item.response?.sentiment || "N/A"}
               </small>
             </div>
           ))}
@@ -161,7 +174,11 @@ function App() {
           onChange={(e) => setMessage(e.target.value)}
         />
 
-        <button className="btn" onClick={sendMessage} disabled={loading}>
+        <button
+          className="btn"
+          onClick={sendMessage}
+          disabled={loading}
+        >
           {loading ? "Processing..." : "Send"}
         </button>
       </div>

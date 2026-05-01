@@ -13,7 +13,7 @@ import json
 import re
 
 # ---------------- API KEY ----------------
-os.environ["GROQ_API_KEY"] = "your_api_key_here"  # 🔐 replace with your key
+os.environ["GROQ_API_KEY"] = "your_api_key_here"
 
 llm = ChatGroq(model="llama-3.3-70b-versatile")
 
@@ -25,7 +25,7 @@ class State(TypedDict, total=False):
     form_data: dict
     summary: str
     insight: str
-    mode: str   # 🔥 NEW (create/edit)
+    mode: str
 
 
 # ---------------- NODE 1: ANALYZE ----------------
@@ -33,10 +33,12 @@ def analyze_node(state):
     message = state.get("message", "")
     msg_lower = message.lower()
 
-    # 🔥 STEP 1: DETECT EDIT VIA CHAT
+    # ---------------- EDIT DETECTION ----------------
     if any(word in msg_lower for word in ["change", "update", "edit"]):
+
         updates = {}
 
+        # ---------------- SENTIMENT ----------------
         if "sentiment" in msg_lower:
             if "positive" in msg_lower:
                 updates["sentiment"] = "positive"
@@ -45,58 +47,56 @@ def analyze_node(state):
             else:
                 updates["sentiment"] = "neutral"
 
+        # ---------------- PRODUCT ----------------
         if "product" in msg_lower:
             if "tablet" in msg_lower:
                 updates["product"] = "Tablet"
 
+        # ---------------- BROCHURE ----------------
         if "brochure" in msg_lower:
-            if "no" in msg_lower:
-                updates["brochure"] = False
-            else:
-                updates["brochure"] = True
+            updates["brochure"] = "no" not in msg_lower
+
+        # ---------------- 🔥 FIXED HCP NAME EXTRACTION ----------------
+        name_match = re.search(
+            r"(dr\.?\s*[a-z]+|change name to\s+dr\.?\s*[a-z]+|update name to\s+dr\.?\s*[a-z]+)",
+            message,
+            re.IGNORECASE
+        )
+
+        if name_match:
+            cleaned = re.search(r"dr\.?\s*[a-z]+", name_match.group(), re.IGNORECASE)
+            if cleaned:
+                updates["hcp_name"] = cleaned.group().replace("Dr.", "Dr").title()
 
         state["parsed"] = updates
         state["mode"] = "edit"
         return state
 
-    # 🔥 STEP 2: NORMAL CREATE FLOW (LLM)
+    # ---------------- CREATE FLOW (LLM) ----------------
     prompt = f"""
 Extract structured data from this message.
 
 Message:
 {message}
 
-Return ONLY valid JSON. No explanation.
+Return ONLY valid JSON.
 
 {{
-  "hcp_name": "Dr Smith",
-  "sentiment": "positive",
-  "brochure": true,
-  "product": "Aspirin",
+  "hcp_name": "",
+  "sentiment": "neutral",
+  "brochure": false,
+  "product": "",
   "date": null
 }}
-
-Rules:
-- Extract doctor name if present
-- sentiment: positive / negative / neutral
-- brochure = true if mentioned
-- product if mentioned else null
-- date = null if not mentioned
 """
 
     response = llm.invoke(prompt)
     content = response.content.strip()
 
-    print("RAW LLM OUTPUT:", content)
-
     try:
         json_match = re.search(r"\{.*\}", content, re.DOTALL)
-        if json_match:
-            parsed = json.loads(json_match.group())
-        else:
-            raise ValueError("No JSON found")
+        parsed = json.loads(json_match.group()) if json_match else {}
     except:
-        print("JSON PARSE FAILED")
         parsed = {
             "hcp_name": "",
             "sentiment": "neutral",
@@ -113,9 +113,9 @@ Rules:
 # ---------------- NODE 2: LOG / EDIT ----------------
 def log_node(state):
     data = state.get("parsed", {})
+    mode = state.get("mode", "create")
 
-    # 🔥 SWITCH TOOL BASED ON MODE
-    if state.get("mode") == "edit":
+    if mode == "edit":
         state["form_data"] = edit_interaction(data)
     else:
         state["form_data"] = log_interaction(data)
@@ -124,7 +124,7 @@ def log_node(state):
 
 
 # ---------------- NODE 3: SENTIMENT ----------------
-def edit_node(state):
+def sentiment_node(state):
     message = state.get("message", "")
     state["sentiment"] = sentiment_tool(message)
     return state
@@ -147,15 +147,15 @@ graph = StateGraph(State)
 
 graph.add_node("analyze", analyze_node)
 graph.add_node("log", log_node)
-graph.add_node("edit", edit_node)
+graph.add_node("sentiment", sentiment_node)
 graph.add_node("summary", summary_node)
 graph.add_node("insight", insight_node)
 
 graph.set_entry_point("analyze")
 
 graph.add_edge("analyze", "log")
-graph.add_edge("log", "edit")
-graph.add_edge("edit", "summary")
+graph.add_edge("log", "sentiment")
+graph.add_edge("sentiment", "summary")
 graph.add_edge("summary", "insight")
 graph.add_edge("insight", END)
 
@@ -165,8 +165,6 @@ app = graph.compile()
 # ---------------- FINAL OUTPUT ----------------
 def run_agent(message: str):
     result = app.invoke({"message": message})
-
-    print("FINAL RESULT:", result)
 
     return {
         "form_data": result.get("form_data", {}),

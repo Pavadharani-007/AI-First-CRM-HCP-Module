@@ -1,4 +1,5 @@
-# ---------------- GLOBAL STATE ----------------
+# backend/tools.py
+
 form_data = {
     "hcp_name": "",
     "date": "",
@@ -7,15 +8,16 @@ form_data = {
     "brochure": False
 }
 
-
 # ---------------- TOOL 1: LOG INTERACTION ----------------
 def log_interaction(data: dict):
     """
-    Stores extracted interaction data into form state
+    Stores interaction data without overwriting edited values
     """
     for key in form_data:
-        if key in data and data[key] is not None:
-            form_data[key] = data[key]
+        if key in data and data[key] not in [None, ""]:
+            # only fill empty fields (DO NOT overwrite edited values)
+            if form_data[key] in ["", None, False]:
+                form_data[key] = data[key]
 
     return form_data
 
@@ -23,20 +25,17 @@ def log_interaction(data: dict):
 # ---------------- TOOL 2: EDIT INTERACTION ----------------
 def edit_interaction(updates: dict):
     """
-    Updates only specific fields in form data
+    Updates only provided fields safely
     """
     for key, value in updates.items():
-        if key in form_data:
+        if key in form_data and value not in [None, ""]:
             form_data[key] = value
 
     return form_data
 
 
-# ---------------- TOOL 3: SUMMARIZE ----------------
+# ---------------- TOOL 3: SUMMARY ----------------
 def summarize_interaction():
-    """
-    Generates clean interaction summary
-    """
     name = form_data.get("hcp_name") or "HCP"
     sentiment = form_data.get("sentiment") or "neutral"
     product = form_data.get("product") or "general topics"
@@ -44,11 +43,8 @@ def summarize_interaction():
     return f"{name} had a {sentiment} interaction and discussed {product}."
 
 
-# ---------------- TOOL 4: SENTIMENT ANALYSIS ----------------
+# ---------------- TOOL 4: SENTIMENT ----------------
 def sentiment_tool(text: str):
-    """
-    Basic sentiment detection (can be replaced by LLM later)
-    """
     text = text.lower()
 
     if "positive" in text:
@@ -61,11 +57,8 @@ def sentiment_tool(text: str):
     return form_data["sentiment"]
 
 
-# ---------------- TOOL 5: HCP INSIGHT ----------------
+# ---------------- TOOL 5: INSIGHT ----------------
 def hcp_insight():
-    """
-    Generates priority level for HCP
-    """
     sentiment = form_data.get("sentiment", "")
 
     if sentiment == "positive":
